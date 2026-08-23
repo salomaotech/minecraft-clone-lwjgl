@@ -5,7 +5,6 @@ com\mineclone\Mat4.class
 com\mineclone\Main$1.class
 com\mineclone\WorldIO$Callback.class
 com\mineclone\DayNight.class
-com\mineclone\UIOverlay$1.class
 com\mineclone\World$SavedPlayerState.class
 com\mineclone\Clouds.class
 com\mineclone\Player.class
