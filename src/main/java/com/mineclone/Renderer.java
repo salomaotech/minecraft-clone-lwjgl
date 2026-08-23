@@ -73,6 +73,12 @@ public class Renderer {
         for (Block b : world.blocks()) {
             double cx = b.worldX(), cy = b.worldY(), cz = b.worldZ();
             BlockType t = b.getType();
+            if (t == BlockType.AGUA) {
+                float[] c = t.getTopColor();
+                glColor4f(c[0], c[1], c[2], 0.55f);
+                drawBoxRaw(cx, cy, cz, (SIZE - 0.5)/2, 6, (SIZE - 0.5)/2);
+                continue;
+            }
             if (t == BlockType.GRAMA) {
                 float[] side = t.getSideColor();
                 drawBox(cx, cy, cz, (SIZE - 0.5) / 2, (SIZE - 0.5) / 2, (SIZE - 0.5) / 2, side[0], side[1], side[2]);

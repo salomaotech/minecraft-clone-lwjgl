@@ -12,7 +12,9 @@ public enum BlockType {
     TERRA("Terra", rgb(134, 97, 42), rgb(101, 67, 33)),
     PEDRA("Pedra", rgb(140, 140, 140), rgb(110, 110, 110)),
     MADEIRA("Madeira", rgb(160, 120, 60), rgb(110, 75, 30)),
-    AREIA("Areia", rgb(210, 190, 120), rgb(190, 170, 100));
+    AREIA("Areia", rgb(210, 190, 120), rgb(190, 170, 100)),
+    AGUA("Água", rgb(64,164,223), rgb(64,164,223)),
+    FOLHA("Folha", rgb(55, 124, 35), rgb(55,124,35));
 
     private final String nome;
     private final float[] topColor;   // {r,g,b} 0..1

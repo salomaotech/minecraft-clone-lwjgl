@@ -162,6 +162,7 @@ public class Player {
         double pMinZ = pz - PLAYER_WIDTH / 2, pMaxZ = pz + PLAYER_WIDTH / 2;
         double pMinY = feet - PLAYER_HEIGHT, pMaxY = feet - 0.05;
         for (Block b : world.blocks()) {
+            if(b.getType()==BlockType.AGUA) continue;
             double bx = b.worldX(), by = b.worldY(), bz = b.worldZ();
             double minX = bx - SIZE / 2, maxX = bx + SIZE / 2, minY = by - SIZE / 2, maxY = by + SIZE / 2, minZ = bz - SIZE / 2, maxZ = bz + SIZE / 2;
             boolean ox = pMaxX > minX && pMinX < maxX, oz = pMaxZ > minZ && pMinZ < maxZ, oy = pMaxY > minY && pMinY < maxY;

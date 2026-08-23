@@ -53,13 +53,47 @@ public class World {
     }
 
     public void createHugeWorldInitial() {
-        createPlatform();
-        for (int cx = -4; cx <= 4; cx++) for (int cz = -4; cz <= 4; cz++) {
-            String ck = cx + "_" + cz;
-            File f = new File(chunkDir, ck + ".txt");
-            if (!f.exists()) {
-                try (PrintWriter w = new PrintWriter(f)) { /* chunk vazio */ } catch (Exception ignored) { }
+        Random rnd=new Random(1337);
+        Map<String, StringBuilder> buf=new HashMap<>();
+        for(int x=-50;x<=50;x++) for(int z=-50;z<=50;z++){
+            double n = Math.sin(x*0.09)*2.2 + Math.cos(z*0.09)*2.2 + Math.sin((x+z)*0.05)*1.5 + (rnd.nextDouble()-0.5)*1.2;
+            int h = (int)Math.round(n);
+            h = Math.max(-4, Math.min(2, h));
+            String ck=chunkKey(x,z);
+            StringBuilder sb=buf.computeIfAbsent(ck,k->new StringBuilder());
+            if(h <= 0){
+                // morro/plano: coluna de 0 até h (negativo sobe)
+                for(int y=0; y>=h; y--){
+                    BlockType t = (y==h ? (rnd.nextDouble()<0.04?BlockType.AREIA:BlockType.GRAMA) : y>=h+2 ? BlockType.TERRA : BlockType.PEDRA);
+                    sb.append(x+","+y+","+z+","+t.name()+"\n");
+                }
+                if(rnd.nextDouble()<0.015 && h<1) sb.append(x+","+(h-1)+","+z+","+BlockType.PEDRA.name()+"\n");
+                if(rnd.nextDouble()<0.012){
+                    int th=h;
+                    for(int y=th-1;y>=th-5;y--) buf.computeIfAbsent(chunkKey(x,z),k->new StringBuilder()).append(x+","+y+","+z+","+BlockType.MADEIRA.name()+"\n");
+                    for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) for(int dy=th-7;dy>=th-6;dy--)
+                        buf.computeIfAbsent(chunkKey(x+dx,z+dz),k->new StringBuilder()).append((x+dx)+","+dy+","+(z+dz)+","+BlockType.FOLHA.name()+"\n");
+                    for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) if(Math.abs(dx)+Math.abs(dz)<2)
+                        buf.computeIfAbsent(chunkKey(x+dx,z+dz),k->new StringBuilder()).append((x+dx)+","+(th-8)+","+(z+dz)+","+BlockType.FOLHA.name()+"\n");
+                }
+            } else {
+                // vale: depressão com água
+                // fundo do vale em y=h
+                sb.append(x+","+h+","+z+","+BlockType.AREIA.name()+"\n");
+                if(h>=2) sb.append(x+","+(h-1)+","+z+","+BlockType.TERRA.name()+"\n");
+                // água até y=0
+                for(int y=0; y<h; y++) sb.append(x+","+y+","+z+","+BlockType.AGUA.name()+"\n");
             }
+        }
+        for(Map.Entry<String,StringBuilder> e: buf.entrySet()){
+            File f=new File(chunkDir, e.getKey()+".txt");
+            if(f.exists()) continue;
+            try(PrintWriter w=new PrintWriter(f)){ w.print(e.getValue().toString()); }catch(Exception ignored){}
+        }
+        // carrega só 3x3 ao redor do spawn
+        for(int dx=-RENDER_DIST;dx<=RENDER_DIST;dx++) for(int dz=-RENDER_DIST;dz<=RENDER_DIST;dz++){
+            String ck=dx+"_"+dz;
+            loadChunk(ck);
         }
     }
 
