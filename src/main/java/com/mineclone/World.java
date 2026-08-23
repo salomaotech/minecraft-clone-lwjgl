@@ -42,7 +42,18 @@ public class World {
 
     public void removeBlock(Block b) {
         if (b == null) return;
+        int x=b.getGridX(), y=b.getGridY(), z=b.getGridZ();
         blocks.remove(b.key());
+        // escoamento: se vizinho é água, preenche o vazio com água
+        int[][] dirs={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+        for(int[] d: dirs){
+            Block nb=get(x+d[0], y+d[1], z+d[2]);
+            if(nb!=null && nb.getType()==BlockType.AGUA){
+                String k=Block.key(x,y,z);
+                if(!blocks.containsKey(k)) blocks.put(k, new Block(x,y,z,BlockType.AGUA));
+                break;
+            }
+        }
     }
 
     public void clear() { blocks.clear(); }
