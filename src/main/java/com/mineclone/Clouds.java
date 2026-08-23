@@ -17,10 +17,10 @@ public class Clouds {
 
     public Clouds() {
         Random rnd = new Random(42);
-        for (int i = 0; i < 10; i++) {
-            double baseX = (rnd.nextDouble() - 0.5) * 2200;
-            double baseZ = (rnd.nextDouble() - 0.5) * 2200;
-            double baseY = -750 - rnd.nextDouble() * 80;
+        for (int i = 0; i < 18; i++) {
+            double baseX = (rnd.nextDouble() - 0.5) * 5000;
+            double baseZ = (rnd.nextDouble() - 0.5) * 5000;
+            double baseY = -850 - rnd.nextDouble() * 100;
             Cluster cl = new Cluster();
             cl.baseX = baseX; cl.baseY = baseY; cl.baseZ = baseZ;
             int parts = 5 + rnd.nextInt(3);
@@ -35,10 +35,10 @@ public class Clouds {
             }
             clusters.add(cl);
         }
-        for (int i = 0; i < 8; i++) {
-            double baseX = (rnd.nextDouble() - 0.5) * 3800;
-            double baseZ = (rnd.nextDouble() - 0.5) * 3800;
-            double baseY = -820 - rnd.nextDouble() * 50;
+        for (int i = 0; i < 14; i++) {
+            double baseX = (rnd.nextDouble() - 0.5) * 9000;
+            double baseZ = (rnd.nextDouble() - 0.5) * 9000;
+            double baseY = -950 - rnd.nextDouble() * 80;
             Cluster cl = new Cluster();
             cl.baseX = baseX; cl.baseY = baseY; cl.baseZ = baseZ;
             int parts = 6 + rnd.nextInt(2);
@@ -58,7 +58,8 @@ public class Clouds {
     public void update(double dt) {
         for (Cluster c : clusters) {
             c.baseX += 6 * dt;
-            if (c.baseX > 1100) c.baseX = -1100;
+            if (c.baseX > 4500) c.baseX = -4500;
+            if (c.baseX < -4500) c.baseX = 4500;
         }
     }
 }

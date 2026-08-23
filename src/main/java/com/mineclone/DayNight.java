@@ -26,7 +26,7 @@ public class DayNight {
 
         double angle = (worldTime / DAY_TICKS) * 360;
         double rad = Math.toRadians(angle);
-        double R = 1900;
+        double R = 4200; // dobro para mundo 201x201
         sunX = Math.cos(rad) * R;
         sunY = -Math.sin(rad) * R;
 

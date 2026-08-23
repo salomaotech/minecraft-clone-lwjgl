@@ -66,7 +66,7 @@ public class Renderer {
     }
 
     public void drawFloor(double playerX, double playerZ) {
-        drawBox(playerX, 30, playerZ, 1500, 5, 1500, 90 / 255f, 140 / 255f, 60 / 255f);
+        drawBox(playerX, 30, playerZ, 2500, 5, 2500, 90 / 255f, 140 / 255f, 60 / 255f);
     }
 
     public void drawBlocks(World world) {

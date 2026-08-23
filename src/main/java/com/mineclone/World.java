@@ -55,7 +55,7 @@ public class World {
     public void createHugeWorldInitial() {
         Random rnd=new Random(1337);
         Map<String, StringBuilder> buf=new HashMap<>();
-        for(int x=-50;x<=50;x++) for(int z=-50;z<=50;z++){
+        for(int x=-100;x<=100;x++) for(int z=-100;z<=100;z++){
             double n = Math.sin(x*0.09)*2.2 + Math.cos(z*0.09)*2.2 + Math.sin((x+z)*0.05)*1.5 + (rnd.nextDouble()-0.5)*1.2;
             int h = (int)Math.round(n);
             h = Math.max(-4, Math.min(2, h));
@@ -68,12 +68,15 @@ public class World {
                     sb.append(x+","+y+","+z+","+t.name()+"\n");
                 }
                 if(rnd.nextDouble()<0.015 && h<1) sb.append(x+","+(h-1)+","+z+","+BlockType.PEDRA.name()+"\n");
-                if(rnd.nextDouble()<0.012){
+                if(rnd.nextDouble()<0.015){
                     int th=h;
                     for(int y=th-1;y>=th-5;y--) buf.computeIfAbsent(chunkKey(x,z),k->new StringBuilder()).append(x+","+y+","+z+","+BlockType.MADEIRA.name()+"\n");
+                    // folhas encostadas no tronco (anel em th-5)
+                    for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) if(!(dx==0&&dz==0))
+                        buf.computeIfAbsent(chunkKey(x+dx,z+dz),k->new StringBuilder()).append((x+dx)+","+(th-5)+","+(z+dz)+","+BlockType.FOLHA.name()+"\n");
                     for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) for(int dy=th-7;dy>=th-6;dy--)
                         buf.computeIfAbsent(chunkKey(x+dx,z+dz),k->new StringBuilder()).append((x+dx)+","+dy+","+(z+dz)+","+BlockType.FOLHA.name()+"\n");
-                    for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) if(Math.abs(dx)+Math.abs(dz)<2)
+                    for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) if(Math.abs(dx)+Math.abs(dz)<=1)
                         buf.computeIfAbsent(chunkKey(x+dx,z+dz),k->new StringBuilder()).append((x+dx)+","+(th-8)+","+(z+dz)+","+BlockType.FOLHA.name()+"\n");
                 }
             } else {

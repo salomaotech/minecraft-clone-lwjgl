@@ -43,9 +43,11 @@ public class Player {
 
     /** forward>0 anda pra frente, strafe>0 anda pra direita; speed já inclui sprint. */
     public void update(double dt, World world, double forward, double strafe, boolean sprint, boolean jumpHeld) {
+        boolean inWater = isInWater(world);
         double len = Math.hypot(forward, strafe);
         if (len > 0) { forward /= len; strafe /= len; }
         double speed = sprint ? SPRINT_SPEED : WALK_SPEED;
+        if(inWater) speed *= 0.45;
         double yawRad = Math.toRadians(yaw);
         double fX = Math.sin(yawRad), fZ = Math.cos(yawRad);
         double rX = Math.cos(yawRad), rZ = -Math.sin(yawRad);
@@ -69,9 +71,14 @@ public class Player {
 
         boolean grounded = isOnGround(world);
         if (grounded) { onGround = true; if (vy > 0) vy = 0; } else onGround = false;
-        if (jumpHeld && onGround) { vy = -JUMP_VEL; onGround = false; }
+        if(inWater){
+            vy += GRAVITY * 0.2 * dt;
+            if(vy > 3) vy=3;
+            if(jumpHeld) vy = -4;
+        }
+        if (jumpHeld && onGround && !inWater) { vy = -JUMP_VEL; onGround = false; }
 
-        vy += GRAVITY * dt;
+        if(!inWater) vy += GRAVITY * dt;
         if (vy > TERMINAL_VEL) vy = TERMINAL_VEL;
         if (onGround && vy > 0) vy = 0;
         double newFeet = feetY + vy * dt;
@@ -171,6 +178,12 @@ public class Player {
         return false;
     }
 
+    private boolean isInWater(World world){
+        int gx=(int)Math.floor(playerX+0.5), gz=(int)Math.floor(playerZ+0.5);
+        int fy=(int)Math.floor(feetY), hy=(int)Math.floor(feetY-PLAYER_HEIGHT/2);
+        Block b1=world.get(gx,fy,gz), b2=world.get(gx,hy,gz);
+        return (b1!=null && b1.getType()==BlockType.AGUA) || (b2!=null && b2.getType()==BlockType.AGUA);
+    }
     public boolean isCollidingAtGrid(int gx, int gy, int gz) {
         double bx = gx * SIZE, by = gy * SIZE, bz = gz * SIZE;
         double minX = bx - SIZE / 2, maxX = bx + SIZE / 2, minY = by - SIZE / 2, maxY = by + SIZE / 2, minZ = bz - SIZE / 2, maxZ = bz + SIZE / 2;
