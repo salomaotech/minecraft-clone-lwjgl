@@ -152,28 +152,37 @@ public class World {
     private long lastWaterTick=0;
     public void tickWater(){
         long now=System.nanoTime();
-        if(now-lastWaterTick < 300_000_000L) return;
+        if(now-lastWaterTick < 200_000_000L) return;
         lastWaterTick=now;
-        List<Block> waters=new ArrayList<>();
-        for(Block b: blocks.values()) if(b.getType()==BlockType.AGUA) waters.add(b);
-        for(Block w: waters){
-            int x=w.getGridX(), y=w.getGridY(), z=w.getGridZ();
-            // cai se abaixo é ar
+        // agrupa por coluna x,z
+        Map<String, List<Block>> cols=new HashMap<>();
+        for(Block b: blocks.values()) if(b.getType()==BlockType.AGUA){
+            String k=b.getGridX()+","+b.getGridZ();
+            cols.computeIfAbsent(k, kk->new ArrayList<>()).add(b);
+        }
+        for(Map.Entry<String, List<Block>> e: cols.entrySet()){
+            List<Block> col=e.getValue();
+            col.sort((a,b)-> Integer.compare(b.getGridY(), a.getGridY())); // menor Y (mais baixo) primeiro -> maior Y
+            Block bottom=col.get(0);
+            int x=bottom.getGridX(), y=bottom.getGridY(), z=bottom.getGridZ();
             if(!contains(x,y+1,z)){
-                Block below=new Block(x,y+1,z,BlockType.AGUA);
-                // só cai se abaixo não for sólido longe? simples: sempre cai
-                if(!blocks.containsKey(below.key())){
-                    blocks.remove(w.key());
-                    blocks.put(below.key(), below);
+                // cai coluna inteira junta
+                List<Block> toMove=new ArrayList<>(col);
+                for(Block b: toMove){
+                    blocks.remove(b.key());
+                }
+                for(Block b: toMove){
+                    Block nb=new Block(b.getGridX(), b.getGridY()+1, b.getGridZ(), BlockType.AGUA);
+                    blocks.put(nb.key(), nb);
                 }
             } else if(contains(x,y+1,z) && blocks.get(Block.key(x,y+1,z)).getType()!=BlockType.AGUA){
-                // espalha para lados se abaixo é sólido
                 int[][] dirs={{1,0},{-1,0},{0,1},{0,-1}};
+                java.util.Collections.shuffle(Arrays.asList(dirs), new java.util.Random());
                 for(int[] d: dirs){
                     int nx=x+d[0], nz=z+d[1];
-                    if(!contains(nx,y,nz) && !contains(nx,y+1,nz)){
+                    if(!contains(nx,y,nz)){
                         blocks.put(Block.key(nx,y,nz), new Block(nx,y,nz,BlockType.AGUA));
-                        break; // só um por tick para não inundar
+                        break;
                     }
                 }
             }
