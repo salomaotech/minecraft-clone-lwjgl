@@ -114,6 +114,7 @@ public class Main {
         boolean jumpHeld = isDown(GLFW_KEY_SPACE) || isDown(GLFW_KEY_BACKSPACE);
 
         player.update(dt, world, forward, strafe, sprint, jumpHeld);
+        world.tickWater();
         world.tickChunks(player.playerX, player.playerZ);
         dayNight.update(dt);
         clouds.update(dt);

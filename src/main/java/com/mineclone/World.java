@@ -149,6 +149,37 @@ public class World {
         } catch (Exception ignored) { }
     }
 
+    private long lastWaterTick=0;
+    public void tickWater(){
+        long now=System.nanoTime();
+        if(now-lastWaterTick < 300_000_000L) return;
+        lastWaterTick=now;
+        List<Block> waters=new ArrayList<>();
+        for(Block b: blocks.values()) if(b.getType()==BlockType.AGUA) waters.add(b);
+        for(Block w: waters){
+            int x=w.getGridX(), y=w.getGridY(), z=w.getGridZ();
+            // cai se abaixo é ar
+            if(!contains(x,y+1,z)){
+                Block below=new Block(x,y+1,z,BlockType.AGUA);
+                // só cai se abaixo não for sólido longe? simples: sempre cai
+                if(!blocks.containsKey(below.key())){
+                    blocks.remove(w.key());
+                    blocks.put(below.key(), below);
+                }
+            } else if(contains(x,y+1,z) && blocks.get(Block.key(x,y+1,z)).getType()!=BlockType.AGUA){
+                // espalha para lados se abaixo é sólido
+                int[][] dirs={{1,0},{-1,0},{0,1},{0,-1}};
+                for(int[] d: dirs){
+                    int nx=x+d[0], nz=z+d[1];
+                    if(!contains(nx,y,nz) && !contains(nx,y+1,nz)){
+                        blocks.put(Block.key(nx,y,nz), new Block(nx,y,nz,BlockType.AGUA));
+                        break; // só um por tick para não inundar
+                    }
+                }
+            }
+        }
+    }
+
     /** Chamar a cada frame; só faz trabalho a cada ~0.8s (igual ao original). */
     public void tickChunks(double playerX, double playerZ) {
         long now = System.nanoTime();
