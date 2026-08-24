@@ -34,6 +34,7 @@ public class World {
     private final Set<String> requestedChunks = ConcurrentHashMap.newKeySet();
     private final Queue<Map.Entry<String, List<Block>>> chunkResults = new ConcurrentLinkedQueue<>();
     private Thread loaderThread;
+    private volatile boolean loaderStopped = false;
 
     public World(File chunkDir) {
         this.chunkDir = chunkDir;
@@ -49,7 +50,6 @@ public class World {
         if (y < -64 || y > 5) return false;
         String k = Block.key(x, y, z);
         if (blocks.containsKey(k)) return false;
-        if (blocks.size() > 20000) return false;
         blocks.put(k, new Block(x, y, z, t));
         return true;
     }
@@ -126,10 +126,12 @@ public class World {
     }
 
     private void loaderLoop() {
-        while (true) {
+        while (!loaderStopped) {
             String ck = chunkRequests.poll();
             if (ck != null) {
+                if (loaderStopped) return;
                 List<Block> list = loadOrGenerateChunk(ck);
+                if (loaderStopped) return;
                 chunkResults.add(new AbstractMap.SimpleEntry<>(ck, list));
                 requestedChunks.remove(ck);
                 continue;
@@ -282,6 +284,23 @@ public class World {
         }
         loadedChunks.clear();
         loadedChunks.addAll(kept);
+    }
+
+    /**
+     * Salva em disco TUDO que está na RAM (incluindo os chunks ao redor do
+     * jogador, que só iam para o disco ao ficar distantes) e encerra o loader.
+     * Sem isso, fechar o jogo descartava a construção recente. Chamar ao sair.
+     */
+    public void flushToDiskAndStop() {
+        loaderStopped = true;
+        chunkRequests.clear();
+        requestedChunks.clear();
+        Map<String, List<Block>> byChunk = new HashMap<>();
+        for (Block b : blocks.values()) byChunk.computeIfAbsent(chunkKey(b.getGridX(), b.getGridZ()), k -> new ArrayList<>()).add(b);
+        for (Map.Entry<String, List<Block>> e : byChunk.entrySet()) saveChunk(e.getKey(), e.getValue());
+        blocks.clear();
+        loadedChunks.clear();
+        chunkResults.clear();
     }
 
     // ---- gravação de chunk em disco ----

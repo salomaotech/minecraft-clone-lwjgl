@@ -222,8 +222,7 @@ public class Main {
             if (button == GLFW_MOUSE_BUTTON_LEFT) {
                 int gx = hit.placeX, gz = hit.placeZ, gy = 0;
                 while (world.contains(gx, gy, gz) && gy > -64) gy--;
-                if (!player.isCollidingAtGrid(gx, gy, gz) && !world.addBlock(gx, gy, gz, selectedType))
-                    ui.showToast("Limite de 20000 blocos atingido");
+                if (!player.isCollidingAtGrid(gx, gy, gz)) world.addBlock(gx, gy, gz, selectedType);
             }
             return;
         }
@@ -235,7 +234,7 @@ public class Main {
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             int nx = hit.placeX, ny = hit.placeY, nz = hit.placeZ;
             if (player.isCollidingAtGrid(nx, ny, nz)) return;
-            if (!world.addBlock(nx, ny, nz, selectedType)) ui.showToast("Limite de 20000 blocos atingido");
+            world.addBlock(nx, ny, nz, selectedType);
         }
     }
 
@@ -289,6 +288,7 @@ public class Main {
     }
 
     private void cleanup() {
+        world.flushToDiskAndStop();
         glfwFreeCallbacks(window);
         glfwDestroyWindow(window);
         glfwTerminate();
