@@ -65,6 +65,46 @@ public class Renderer {
         fb.put(a).put(b).put(c).put(d); fb.flip(); return fb;
     }
 
+    private static final int TORCH_LIGHTS = 5; // GL_LIGHT3..GL_LIGHT7
+
+    /**
+     * As até 5 tochas mais próximas da câmera viram luzes pontuais quentes com
+     * atenuação por distância — é isso que ilumina a noite ao redor delas.
+     * Chamar todo frame depois de applyLighting.
+     */
+    public void applyTorchLights(World world, double ex, double ey, double ez) {
+        int n = TORCH_LIGHTS;
+        double[] bd = new double[n];
+        double[][] bp = new double[n][3];
+        java.util.Arrays.fill(bd, Double.MAX_VALUE);
+
+        for (Block b : world.blocks()) {
+            if (b.getType() != BlockType.TOCHA) continue;
+            double dx = b.worldX() - ex, dy = b.worldY() - ey, dz = b.worldZ() - ez;
+            double d2 = dx*dx + dy*dy + dz*dz;
+            if (d2 > 1200*1200) continue;
+            for (int i = 0; i < n; i++) {
+                if (d2 < bd[i]) {
+                    for (int j = n - 1; j > i; j--) { bd[j] = bd[j-1]; bp[j] = bp[j-1]; }
+                    bd[i] = d2;
+                    bp[i] = new double[]{b.worldX(), b.worldY(), b.worldZ()};
+                    break;
+                }
+            }
+        }
+
+        for (int i = 0; i < n; i++) {
+            int light = GL_LIGHT3 + i;
+            if (bd[i] == Double.MAX_VALUE) { glDisable(light); continue; }
+            glLight(light, GL_POSITION, buf((float) bp[i][0], (float) bp[i][1], (float) bp[i][2], 1));
+            glLight(light, GL_DIFFUSE, buf(1f, 0.72f, 0.32f, 1f));
+            glLightf(light, GL_CONSTANT_ATTENUATION, 0.30f);
+            glLightf(light, GL_LINEAR_ATTENUATION, 0.012f);
+            glLightf(light, GL_QUADRATIC_ATTENUATION, 0.00004f);
+            glEnable(light);
+        }
+    }
+
     public void drawFloor(double playerX, double playerZ) {
         drawBox(playerX, 30, playerZ, 2500, 5, 2500, 90 / 255f, 140 / 255f, 60 / 255f);
     }
@@ -73,6 +113,16 @@ public class Renderer {
         for (Block b : world.blocks()) {
             double cx = b.worldX(), cy = b.worldY(), cz = b.worldZ();
             BlockType t = b.getType();
+            if (t == BlockType.TOCHA) {
+                float[] side = t.getSideColor();
+                glColor3f(side[0], side[1], side[2]);
+                drawBoxRaw(cx, cy + SIZE / 2 - 14, cz, 4, 14, 4);
+                glDisable(GL_LIGHTING);
+                glColor3f(1f, 0.82f, 0.25f);
+                drawBoxRaw(cx, cy - 6, cz, 5, 5, 5);
+                glEnable(GL_LIGHTING);
+                continue;
+            }
             if (t == BlockType.AGUA) {
                 float[] c = t.getTopColor();
                 glColor4f(c[0], c[1], c[2], 0.55f);

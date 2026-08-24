@@ -111,10 +111,15 @@ public class Player {
         if (feetY > 600) resetPlayer();
     }
 
+    private static boolean solido(Block b) {
+        return b.getType() != BlockType.AGUA && b.getType() != BlockType.TOCHA;
+    }
+
     private double tryStepUp(World world, double newX, double newZ, double curFeet) {
         if (!isOnGround(world)) return Double.NaN;
         double candidate = Double.MAX_VALUE;
         for (Block b : world.blocks()) {
+            if (!solido(b)) continue;
             double bx = b.worldX(), bz = b.worldZ();
             double half = SIZE / 2 + PLAYER_WIDTH / 2 - 0.05;
             if (Math.abs(bx - newX) >= half || Math.abs(bz - newZ) >= half) continue;
@@ -140,6 +145,7 @@ public class Player {
         double best = 25;
         double bestBelow = Double.MAX_VALUE;
         for (Block b : world.blocks()) {
+            if (!solido(b)) continue;
             if (!overlapsXZ(b, px, pz)) continue;
             double top = b.worldY() - SIZE / 2;
             if (top >= curFeet - 0.8 && top < bestBelow) bestBelow = top;
@@ -151,6 +157,7 @@ public class Player {
     private double findCeilingY(World world, double px, double pz, double headY) {
         double bestBottom = Double.NEGATIVE_INFINITY; boolean f = false;
         for (Block b : world.blocks()) {
+            if (!solido(b)) continue;
             if (!overlapsXZ(b, px, pz)) continue;
             double bottom = b.worldY() + SIZE / 2, top = b.worldY() - SIZE / 2;
             if (top < headY + 0.5 && bottom >= headY - 2) { if (!f || bottom > bestBottom) { bestBottom = bottom; f = true; } }
@@ -169,7 +176,7 @@ public class Player {
         double pMinZ = pz - PLAYER_WIDTH / 2, pMaxZ = pz + PLAYER_WIDTH / 2;
         double pMinY = feet - PLAYER_HEIGHT, pMaxY = feet - 0.05;
         for (Block b : world.blocks()) {
-            if(b.getType()==BlockType.AGUA) continue;
+            if(!solido(b)) continue;
             double bx = b.worldX(), by = b.worldY(), bz = b.worldZ();
             double minX = bx - SIZE / 2, maxX = bx + SIZE / 2, minY = by - SIZE / 2, maxY = by + SIZE / 2, minZ = bz - SIZE / 2, maxZ = bz + SIZE / 2;
             boolean ox = pMaxX > minX && pMinX < maxX, oz = pMaxZ > minZ && pMinZ < maxZ, oy = pMaxY > minY && pMinY < maxY;

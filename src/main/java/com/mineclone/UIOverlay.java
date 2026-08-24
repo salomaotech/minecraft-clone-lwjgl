@@ -165,7 +165,7 @@ public class UIOverlay {
         drawText(x + 14, y + 22, "Horario do Mundo", 1, 1, 1);
         drawText(x + 14, y + 44, dn.formatTime(), 1f, 0.84f, 0f);
         drawText(x + 14, y + 70, "T = +1h   Y = -1h   N = noite", 0.85f, 0.85f, 0.85f);
-        drawText(x + 14, y + 90, "1-5 seleciona bloco, R reseta posicao", 0.85f, 0.85f, 0.85f);
+        drawText(x + 14, y + 90, "1-8 seleciona bloco, R reseta posicao", 0.85f, 0.85f, 0.85f);
         drawText(x + 14, y + 110, "TAB trava/destrava o mouse, ESC destrava", 0.85f, 0.85f, 0.85f);
         drawText(x + 14, y + 132, "Pressione H para fechar", 0.6f, 0.6f, 0.6f);
     }

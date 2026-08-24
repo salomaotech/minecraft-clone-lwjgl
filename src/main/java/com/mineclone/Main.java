@@ -22,7 +22,7 @@ import static org.lwjgl.system.MemoryUtil.NULL;
 public class Main {
 
     private long window;
-    private int winWidth = 1180, winHeight = 760;
+    private int winWidth = 1360, winHeight = 760;
 
     private final World world = new World(new File("chunk_cache"));
     private final Player player = new Player();
@@ -125,6 +125,7 @@ public class Main {
 
     private void render() {
         renderer.applyLighting(dayNight, player.playerX, player.playerZ);
+        renderer.applyTorchLights(world, player.eyeX(), player.eyeY(), player.eyeZ());
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         renderer.beginScene(winWidth, winHeight, UIOverlay.TOP_BAR_H, UIOverlay.BOTTOM_BAR_H, player);
