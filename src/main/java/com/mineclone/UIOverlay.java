@@ -40,6 +40,11 @@ public class UIOverlay {
     private final ByteBuffer textBuf = BufferUtils.createByteBuffer(200_000);
     public boolean helpVisible = false;
 
+    private String toast;
+    private long toastUntilMs;
+
+    public void showToast(String msg) { toast = msg; toastUntilMs = System.currentTimeMillis() + 3500; }
+
     public boolean isOverUI(double mx, double my, int winW) {
         return my <= TOP_BAR_H; // toolbar é a única área realmente "clicável" fora do jogo
     }
@@ -136,6 +141,10 @@ public class UIOverlay {
                 onGround ? "CHAO" : "AR", mouseLocked ? "[MIRANDO]" : "[TAB]");
         drawText(winW - 430, y0 + 19, coords, 1f, 0.65f, 0f);
         drawText(winW - 110, y0 + 19, "Blocos: " + blockCount, 0.56f, 0.93f, 0.56f);
+        if (toast != null) {
+            if (System.currentTimeMillis() > toastUntilMs) toast = null;
+            else drawText(winW / 2 - toast.length() * 3.5, y0 - 18, toast, 1f, 0.45f, 0.25f);
+        }
     }
 
     private void drawCrosshair(int winW, int winH) {

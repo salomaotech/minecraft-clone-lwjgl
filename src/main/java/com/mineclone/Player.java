@@ -178,9 +178,11 @@ public class Player {
         return false;
     }
 
+    private static int gridOf(double coord) { return (int) Math.floor((coord + SIZE / 2) / SIZE); }
+
     private boolean isInWater(World world){
-        int gx=(int)Math.floor(playerX+0.5), gz=(int)Math.floor(playerZ+0.5);
-        int fy=(int)Math.floor(feetY), hy=(int)Math.floor(feetY-PLAYER_HEIGHT/2);
+        int gx=gridOf(playerX), gz=gridOf(playerZ);
+        int fy=gridOf(feetY), hy=gridOf(feetY-PLAYER_HEIGHT/2);
         Block b1=world.get(gx,fy,gz), b2=world.get(gx,hy,gz);
         return (b1!=null && b1.getType()==BlockType.AGUA) || (b2!=null && b2.getType()==BlockType.AGUA);
     }

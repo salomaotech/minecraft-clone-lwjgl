@@ -2,6 +2,8 @@ package com.mineclone;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * Estado do mundo: blocos em RAM + cache de chunks em disco (para não
@@ -9,18 +11,29 @@ import java.util.*;
  * e save/load do arquivo de mundo (mesmo formato do projeto original:
  * "x,y,z,TIPO" por linha, com uma linha "TIME ..." opcional no topo).
  *
- * Toda a lógica aqui é a mesma do App.java original — só não depende mais
- * de javafx.scene.Group.
+ * O terreno é gerado de forma DETERMINÍSTICA POR CHUNK (seed derivada das
+ * coordenadas da coluna), então cada chunk pode ser gerado sozinho, sob
+ * demanda, numa thread de fundo — sem travar o game loop.
  */
 public class World {
 
     public static final double SIZE = Block.SIZE;
     private static final int CHUNK_SIZE = 16;
-    private static final int RENDER_DIST = 1; // 3x3 chunks
+    private static final int RENDER_DIST = 1; // 3x3 chunks carregados ao redor do jogador
+    private static final int MAX_BLOCKS_IN_RAM = 40_000; // limite duro: acima disso descarrega fora do raio na hora
 
     private final Map<String, Block> blocks = new HashMap<>();
     private final File chunkDir;
-    private long lastChunkTick = 0;
+
+    private final Set<String> loadedChunks = new HashSet<>();
+    private long lastLoadCheck = 0;
+    private long lastUnloadTick = 0;
+
+    // comunicação com a thread de fundo que leu/gerou chunks no disco
+    private final Queue<String> chunkRequests = new ConcurrentLinkedQueue<>();
+    private final Set<String> requestedChunks = ConcurrentHashMap.newKeySet();
+    private final Queue<Map.Entry<String, List<Block>>> chunkResults = new ConcurrentLinkedQueue<>();
+    private Thread loaderThread;
 
     public World(File chunkDir) {
         this.chunkDir = chunkDir;
@@ -32,82 +45,44 @@ public class World {
     public Block get(int x, int y, int z) { return blocks.get(Block.key(x, y, z)); }
     public boolean contains(int x, int y, int z) { return blocks.containsKey(Block.key(x, y, z)); }
 
-    public void addBlock(int x, int y, int z, BlockType t) {
-        if (y < -64 || y > 5) return;
+    public boolean addBlock(int x, int y, int z, BlockType t) {
+        if (y < -64 || y > 5) return false;
         String k = Block.key(x, y, z);
-        if (blocks.containsKey(k)) return;
-        if (blocks.size() > 20000) return;
+        if (blocks.containsKey(k)) return false;
+        if (blocks.size() > 20000) return false;
         blocks.put(k, new Block(x, y, z, t));
+        return true;
     }
 
     public void removeBlock(Block b) {
         if (b == null) return;
         int x=b.getGridX(), y=b.getGridY(), z=b.getGridZ();
         blocks.remove(b.key());
-        // escoamento: se vizinho é água, preenche o vazio com água
-        int[][] dirs={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
-        for(int[] d: dirs){
-            Block nb=get(x+d[0], y+d[1], z+d[2]);
-            if(nb!=null && nb.getType()==BlockType.AGUA){
-                String k=Block.key(x,y,z);
-                if(!blocks.containsKey(k)) blocks.put(k, new Block(x,y,z,BlockType.AGUA));
-                break;
-            }
+        // escoamento: apenas água diretamente ACIMA cai para preencher o vazio
+        // (Y negativo = para cima nesta convenção). Água lateral espalha pelo
+        // tickWater; nunca criamos água do nada aqui.
+        Block acima = get(x, y - 1, z);
+        if (acima != null && acima.getType() == BlockType.AGUA) {
+            blocks.remove(acima.key());
+            blocks.put(b.key(), new Block(x, y, z, BlockType.AGUA));
         }
     }
 
-    public void clear() { blocks.clear(); }
+    public void clear() { blocks.clear(); loadedChunks.clear(); }
 
     // ---- presets ----
     public void createPlatform() {
         for (int x = -4; x <= 4; x++) for (int z = -4; z <= 4; z++) addBlock(x, 0, z, BlockType.GRAMA);
     }
 
-    public void createHugeWorldInitial() {
-        Random rnd=new Random(1337);
-        Map<String, StringBuilder> buf=new HashMap<>();
-        for(int x=-100;x<=100;x++) for(int z=-100;z<=100;z++){
-            double n = Math.sin(x*0.09)*2.2 + Math.cos(z*0.09)*2.2 + Math.sin((x+z)*0.05)*1.5 + (rnd.nextDouble()-0.5)*1.2;
-            int h = (int)Math.round(n);
-            h = Math.max(-4, Math.min(2, h));
-            String ck=chunkKey(x,z);
-            StringBuilder sb=buf.computeIfAbsent(ck,k->new StringBuilder());
-            if(h <= 0){
-                // morro/plano: coluna de 0 até h (negativo sobe)
-                for(int y=0; y>=h; y--){
-                    BlockType t = (y==h ? (rnd.nextDouble()<0.04?BlockType.AREIA:BlockType.GRAMA) : y>=h+2 ? BlockType.TERRA : BlockType.PEDRA);
-                    sb.append(x+","+y+","+z+","+t.name()+"\n");
-                }
-                if(rnd.nextDouble()<0.015 && h<1) sb.append(x+","+(h-1)+","+z+","+BlockType.PEDRA.name()+"\n");
-                if(rnd.nextDouble()<0.015){
-                    int th=h;
-                    for(int y=th-1;y>=th-5;y--) buf.computeIfAbsent(chunkKey(x,z),k->new StringBuilder()).append(x+","+y+","+z+","+BlockType.MADEIRA.name()+"\n");
-                    // folhas encostadas no tronco (anel em th-5)
-                    for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) if(!(dx==0&&dz==0))
-                        buf.computeIfAbsent(chunkKey(x+dx,z+dz),k->new StringBuilder()).append((x+dx)+","+(th-5)+","+(z+dz)+","+BlockType.FOLHA.name()+"\n");
-                    for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) for(int dy=th-7;dy>=th-6;dy--)
-                        buf.computeIfAbsent(chunkKey(x+dx,z+dz),k->new StringBuilder()).append((x+dx)+","+dy+","+(z+dz)+","+BlockType.FOLHA.name()+"\n");
-                    for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) if(Math.abs(dx)+Math.abs(dz)<=1)
-                        buf.computeIfAbsent(chunkKey(x+dx,z+dz),k->new StringBuilder()).append((x+dx)+","+(th-8)+","+(z+dz)+","+BlockType.FOLHA.name()+"\n");
-                }
-            } else {
-                // vale: depressão com água
-                // fundo do vale em y=h
-                sb.append(x+","+h+","+z+","+BlockType.AREIA.name()+"\n");
-                if(h>=2) sb.append(x+","+(h-1)+","+z+","+BlockType.TERRA.name()+"\n");
-                // água até y=0
-                for(int y=0; y<h; y++) sb.append(x+","+y+","+z+","+BlockType.AGUA.name()+"\n");
-            }
-        }
-        for(Map.Entry<String,StringBuilder> e: buf.entrySet()){
-            File f=new File(chunkDir, e.getKey()+".txt");
-            if(f.exists()) continue;
-            try(PrintWriter w=new PrintWriter(f)){ w.print(e.getValue().toString()); }catch(Exception ignored){}
-        }
-        // carrega só 3x3 ao redor do spawn
-        for(int dx=-RENDER_DIST;dx<=RENDER_DIST;dx++) for(int dz=-RENDER_DIST;dz<=RENDER_DIST;dz++){
-            String ck=dx+"_"+dz;
-            loadChunk(ck);
+    /** Pede os 3x3 chunks do spawn ao loader e espera chegar (uma única vez, na abertura). */
+    public void createInitialWorld() {
+        requestMissingChunks(0, 0);
+        int expected = (2 * RENDER_DIST + 1) * (2 * RENDER_DIST + 1);
+        long deadline = System.nanoTime() + 3_000_000_000L;
+        while (loadedChunks.size() < expected && System.nanoTime() < deadline) {
+            applyLoadedChunks();
+            try { Thread.sleep(10); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
         }
     }
 
@@ -129,35 +104,194 @@ public class World {
         for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) addBlock(x, -4, z, BlockType.MADEIRA);
     }
 
-    // ---- chunks em disco ----
+    // ---- chunks: carga assíncrona + geração sob demanda ----
     private static int worldToGrid(double coord) { return (int) Math.floor((coord + SIZE / 2) / SIZE); }
     private String chunkKey(int gx, int gz) {
         int cx = Math.floorDiv(gx, CHUNK_SIZE), cz = Math.floorDiv(gz, CHUNK_SIZE);
         return cx + "_" + cz;
     }
 
+    /** Seed estável por coluna (mesma coordenada -> mesmo terreno, sempre). */
+    private static long columnSeed(long x, long z, long salt) {
+        long h = x * 374761393L + z * 668265263L + salt * 1274126177L;
+        h = (h ^ (h >>> 13)) * 1274126177L;
+        return h ^ (h >>> 16);
+    }
+
+    private void ensureLoaderThread() {
+        if (loaderThread != null) return;
+        loaderThread = new Thread(this::loaderLoop, "chunk-loader");
+        loaderThread.setDaemon(true);
+        loaderThread.start();
+    }
+
+    private void loaderLoop() {
+        while (true) {
+            String ck = chunkRequests.poll();
+            if (ck != null) {
+                List<Block> list = loadOrGenerateChunk(ck);
+                chunkResults.add(new AbstractMap.SimpleEntry<>(ck, list));
+                requestedChunks.remove(ck);
+                continue;
+            }
+            try { Thread.sleep(2); } catch (InterruptedException e) { return; }
+        }
+    }
+
+    private List<Block> loadOrGenerateChunk(String ck) {
+        List<Block> list = new ArrayList<>();
+        File f = new File(chunkDir, ck + ".txt");
+        if (f.exists()) {
+            try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+                String l;
+                while ((l = r.readLine()) != null) {
+                    l = l.trim();
+                    if (l.isEmpty() || l.startsWith("#")) continue;
+                    String[] c = l.split(",");
+                    if (c.length != 4) continue;
+                    try {
+                        list.add(new Block(Integer.parseInt(c[0]), Integer.parseInt(c[1]),
+                                Integer.parseInt(c[2]), BlockType.valueOf(c[3])));
+                    } catch (RuntimeException badLine) {
+                        System.err.println("Linha invalida no chunk " + ck + ": \"" + l + "\"");
+                    }
+                }
+            } catch (IOException e) {
+                System.err.println("Erro ao carregar chunk " + ck + ": " + e);
+            }
+        } else {
+            generateChunkContent(ck, list);
+            try (PrintWriter w = new PrintWriter(f)) {
+                for (Block b : list) w.println(b.getGridX() + "," + b.getGridY() + "," + b.getGridZ() + "," + b.getType().name());
+            } catch (IOException e) {
+                System.err.println("Erro ao gravar chunk novo " + ck + ": " + e);
+            }
+        }
+        return list;
+    }
+
+    /** Terreno idêntico em estilo ao original (morros/vales/água/árvores), mas por chunk. */
+    private void generateChunkContent(String ck, List<Block> out) {
+        String[] s = ck.split("_");
+        int cx = Integer.parseInt(s[0]), cz = Integer.parseInt(s[1]);
+        int minX = cx * CHUNK_SIZE, maxX = minX + CHUNK_SIZE - 1;
+        int minZ = cz * CHUNK_SIZE, maxZ = minZ + CHUNK_SIZE - 1;
+        Set<String> seen = new HashSet<>();
+        // varre 1 coluna além da borda para capturar copas de árvores vizinhas
+        for (int x = minX - 1; x <= maxX + 1; x++) {
+            for (int z = minZ - 1; z <= maxZ + 1; z++) {
+                Random rnd = new Random(columnSeed(x, z, 1337));
+                double n = Math.sin(x*0.09)*2.2 + Math.cos(z*0.09)*2.2 + Math.sin((x+z)*0.05)*1.5 + (rnd.nextDouble()-0.5)*1.2;
+                int h = (int)Math.round(n);
+                h = Math.max(-4, Math.min(2, h));
+                if (h <= 0) {
+                    for (int y = 0; y >= h; y--) {
+                        BlockType t = (y == h ? (rnd.nextDouble()<0.04?BlockType.AREIA:BlockType.GRAMA) : y>=h+2 ? BlockType.TERRA : BlockType.PEDRA);
+                        putGenerated(out, seen, x, y, z, t, minX, maxX, minZ, maxZ);
+                    }
+                    Random rf = new Random(columnSeed(x, z, 4242));
+                    if(rf.nextDouble()<0.015 && h<1) putGenerated(out, seen, x, h-1, z, BlockType.PEDRA, minX, maxX, minZ, maxZ);
+                    if(rf.nextDouble()<0.015) emitTree(out, seen, x, z, h, minX, maxX, minZ, maxZ);
+                } else {
+                    putGenerated(out, seen, x, h, z, BlockType.AREIA, minX, maxX, minZ, maxZ);
+                    if(h>=2) putGenerated(out, seen, x, h-1, z, BlockType.TERRA, minX, maxX, minZ, maxZ);
+                    for(int y=0; y<h; y++) putGenerated(out, seen, x, y, z, BlockType.AGUA, minX, maxX, minZ, maxZ);
+                }
+            }
+        }
+    }
+
+    private static void putGenerated(List<Block> out, Set<String> seen, int x, int y, int z, BlockType t,
+                                     int minX, int maxX, int minZ, int maxZ) {
+        if (x < minX || x > maxX || z < minZ || z > maxZ) return;
+        if (!seen.add(Block.key(x, y, z))) return;
+        out.add(new Block(x, y, z, t));
+    }
+
+    private void emitTree(List<Block> out, Set<String> seen, int x, int z, int th,
+                          int minX, int maxX, int minZ, int maxZ) {
+        for(int y=th-1;y>=th-5;y--) putGenerated(out, seen, x, y, z, BlockType.MADEIRA, minX, maxX, minZ, maxZ);
+        for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) if(!(dx==0&&dz==0))
+            putGenerated(out, seen, x+dx, th-5, z+dz, BlockType.FOLHA, minX, maxX, minZ, maxZ);
+        for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) for(int dy=th-7;dy>=th-6;dy--)
+            putGenerated(out, seen, x+dx, dy, z+dz, BlockType.FOLHA, minX, maxX, minZ, maxZ);
+        for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) if(Math.abs(dx)+Math.abs(dz)<=1)
+            putGenerated(out, seen, x+dx, th-8, z+dz, BlockType.FOLHA, minX, maxX, minZ, maxZ);
+    }
+
+    /** Consome na thread do jogo os chunks que o loader terminou de preparar. Barato: chamar todo frame. */
+    public void applyLoadedChunks() {
+        Map.Entry<String, List<Block>> e;
+        while ((e = chunkResults.poll()) != null) {
+            loadedChunks.add(e.getKey());
+            for (Block b : e.getValue()) {
+                String k = b.key();
+                if (!blocks.containsKey(k)) blocks.put(k, b);
+            }
+        }
+    }
+
+    private void requestMissingChunks(int pcx, int pcz) {
+        ensureLoaderThread();
+        for (int dx = -RENDER_DIST; dx <= RENDER_DIST; dx++)
+            for (int dz = -RENDER_DIST; dz <= RENDER_DIST; dz++) {
+                String ck = (pcx + dx) + "_" + (pcz + dz);
+                if (!loadedChunks.contains(ck) && requestedChunks.add(ck)) chunkRequests.add(ck);
+            }
+    }
+
+    /**
+     * Chamar a cada frame: pede chunks novos a cada ~300ms (transição suave ao
+     * andar) e salva/descarrega chunks distantes a cada ~800ms.
+     */
+    public void tickChunks(double playerX, double playerZ) {
+        long now = System.nanoTime();
+        if (now - lastLoadCheck < 300_000_000L) return;
+        lastLoadCheck = now;
+        int pcx = Math.floorDiv(worldToGrid(playerX), CHUNK_SIZE), pcz = Math.floorDiv(worldToGrid(playerZ), CHUNK_SIZE);
+
+        requestMissingChunks(pcx, pcz);
+
+        boolean estouro = blocks.size() > MAX_BLOCKS_IN_RAM;
+        if (!estouro && now - lastUnloadTick < 800_000_000L) return;
+        lastUnloadTick = now;
+
+        unloadFarChunks(pcx, pcz);
+    }
+
+    /**
+     * Descarrega tudo fora do raio agrupando pelos PRÓPRIOS blocos (não por uma
+     * lista de chunks carregados) — assim nenhum bloco fica órfão na RAM, nem
+     * água que escorreu para chunk vizinho, nem mundo carregado de arquivo.
+     */
+    private void unloadFarChunks(int pcx, int pcz) {
+        Map<String, List<Block>> byChunk = new HashMap<>();
+        for (Block b : blocks.values()) byChunk.computeIfAbsent(chunkKey(b.getGridX(), b.getGridZ()), k -> new ArrayList<>()).add(b);
+
+        Set<String> kept = new HashSet<>();
+        for (Map.Entry<String, List<Block>> e : byChunk.entrySet()) {
+            String ck = e.getKey();
+            String[] s = ck.split("_");
+            int cx = Integer.parseInt(s[0]), cz = Integer.parseInt(s[1]);
+            if (Math.max(Math.abs(cx - pcx), Math.abs(cz - pcz)) > RENDER_DIST) {
+                saveChunk(ck, e.getValue());
+                for (Block b : e.getValue()) blocks.remove(b.key());
+            } else {
+                kept.add(ck);
+            }
+        }
+        loadedChunks.clear();
+        loadedChunks.addAll(kept);
+    }
+
+    // ---- gravação de chunk em disco ----
     private void saveChunk(String ck, List<Block> list) {
         if (list.isEmpty()) { new File(chunkDir, ck + ".txt").delete(); return; }
         try (PrintWriter w = new PrintWriter(new File(chunkDir, ck + ".txt"))) {
             for (Block b : list) w.println(b.getGridX() + "," + b.getGridY() + "," + b.getGridZ() + "," + b.getType().name());
-        } catch (Exception ignored) { }
-    }
-
-    private void loadChunk(String ck) {
-        File f = new File(chunkDir, ck + ".txt");
-        if (!f.exists()) return;
-        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
-            String l;
-            while ((l = r.readLine()) != null) {
-                l = l.trim();
-                if (l.isEmpty() || l.startsWith("#")) continue;
-                String[] c = l.split(",");
-                if (c.length != 4) continue;
-                int x = Integer.parseInt(c[0]), y = Integer.parseInt(c[1]), z = Integer.parseInt(c[2]);
-                BlockType t = BlockType.valueOf(c[3]);
-                if (!blocks.containsKey(Block.key(x, y, z))) blocks.put(Block.key(x, y, z), new Block(x, y, z, t));
-            }
-        } catch (Exception ignored) { }
+        } catch (IOException e) {
+            System.err.println("Erro ao salvar chunk " + ck + ": " + e);
+        }
     }
 
     private long lastWaterTick=0;
@@ -173,7 +307,7 @@ public class World {
         }
         for(Map.Entry<String, List<Block>> e: cols.entrySet()){
             List<Block> col=e.getValue();
-            col.sort((a,b)-> Integer.compare(b.getGridY(), a.getGridY())); // menor Y (mais baixo) primeiro -> maior Y
+            col.sort((a,b)-> Integer.compare(b.getGridY(), a.getGridY())); // maior Y primeiro = mais baixo visualmente
             Block bottom=col.get(0);
             int x=bottom.getGridX(), y=bottom.getGridY(), z=bottom.getGridZ();
             if(!contains(x,y+1,z)){
@@ -198,33 +332,6 @@ public class World {
                 }
             }
         }
-    }
-
-    /** Chamar a cada frame; só faz trabalho a cada ~0.8s (igual ao original). */
-    public void tickChunks(double playerX, double playerZ) {
-        long now = System.nanoTime();
-        if (now - lastChunkTick < 800_000_000L) return;
-        lastChunkTick = now;
-        int pcx = Math.floorDiv(worldToGrid(playerX), CHUNK_SIZE), pcz = Math.floorDiv(worldToGrid(playerZ), CHUNK_SIZE);
-
-        Map<String, List<Block>> byChunk = new HashMap<>();
-        for (Block b : blocks.values()) byChunk.computeIfAbsent(chunkKey(b.getGridX(), b.getGridZ()), k -> new ArrayList<>()).add(b);
-
-        for (Map.Entry<String, List<Block>> e : byChunk.entrySet()) {
-            String ck = e.getKey();
-            String[] s = ck.split("_");
-            int cx = Integer.parseInt(s[0]), cz = Integer.parseInt(s[1]);
-            int dist = Math.max(Math.abs(cx - pcx), Math.abs(cz - pcz));
-            if (dist > RENDER_DIST) {
-                saveChunk(ck, e.getValue());
-                for (Block b : e.getValue()) blocks.remove(b.key());
-            }
-        }
-        for (int dx = -RENDER_DIST; dx <= RENDER_DIST; dx++)
-            for (int dz = -RENDER_DIST; dz <= RENDER_DIST; dz++) {
-                String ck = (pcx + dx) + "_" + (pcz + dz);
-                if (!byChunk.containsKey(ck)) loadChunk(ck);
-            }
     }
 
     // ---- save/load do arquivo de mundo completo ----

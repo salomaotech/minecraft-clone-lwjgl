@@ -46,10 +46,9 @@ todos os testes bateram com os valores esperados do projeto original.
 
 COMO RODAR
 -----------
-Requer Maven e JDK 8+. Este ambiente sandbox nao tem acesso ao Maven
-Central pra baixar o LWJGL, entao NAO foi possivel rodar "mvn compile"
-aqui - mas o codigo foi validado sintaticamente e a logica de jogo foi
-testada com stubs fieis a API do LWJGL 3.3.3.
+Requer Maven e JDK 17+ (o pom compila com source/target 17; o JIT usado em
+tempo de execucao vem do JVM instalado na maquina - JDK 21 ou newer tambem
+funciona e traz otimizacoes ainda mais recentes).
 
 Windows:  run.bat
 Linux/Mac: ./run.sh

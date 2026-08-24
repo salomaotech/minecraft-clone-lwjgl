@@ -47,7 +47,7 @@ public class Main {
     public void run() {
         System.out.println("LWJGL " + Version.getVersion());
         init();
-        world.createHugeWorldInitial();
+        world.createInitialWorld();
         loop();
         cleanup();
     }
@@ -69,6 +69,7 @@ public class Main {
         });
 
         glfwSetKeyCallback(window, this::onKey);
+        glfwSetWindowFocusCallback(window, (win, focused) -> { if (!focused) pressed.clear(); });
         glfwSetCursorPosCallback(window, this::onCursorPos);
         glfwSetMouseButtonCallback(window, this::onMouseButton);
         glfwSetScrollCallback(window, this::onScroll);
@@ -98,6 +99,7 @@ public class Main {
             if (dt < 0.0001) dt = 0.0001;
 
             glfwPollEvents();
+            processPendingIO();
             update(dt);
             render();
             glfwSwapBuffers(window);
@@ -105,6 +107,7 @@ public class Main {
     }
 
     private void update(double dt) {
+        world.applyLoadedChunks();
         double forward = 0, strafe = 0;
         if (isDown(GLFW_KEY_W) || isDown(GLFW_KEY_UP)) forward += 1;
         if (isDown(GLFW_KEY_S) || isDown(GLFW_KEY_DOWN)) forward -= 1;
@@ -186,7 +189,7 @@ public class Main {
 
     private void onMouseButton(long win, int button, int action, int mods) {
         if (action != GLFW_PRESS) return;
-        if (mouseY <= UIOverlay.TOP_BAR_H) {
+        if (!mouseLocked && mouseY <= UIOverlay.TOP_BAR_H) {
             if (ui.handleClick(mouseX, mouseY)) return;
         }
         if (!mouseLocked) { setMouseLocked(true); return; }
@@ -219,7 +222,8 @@ public class Main {
             if (button == GLFW_MOUSE_BUTTON_LEFT) {
                 int gx = hit.placeX, gz = hit.placeZ, gy = 0;
                 while (world.contains(gx, gy, gz) && gy > -64) gy--;
-                if (!player.isCollidingAtGrid(gx, gy, gz)) world.addBlock(gx, gy, gz, selectedType);
+                if (!player.isCollidingAtGrid(gx, gy, gz) && !world.addBlock(gx, gy, gz, selectedType))
+                    ui.showToast("Limite de 20000 blocos atingido");
             }
             return;
         }
@@ -231,40 +235,57 @@ public class Main {
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             int nx = hit.placeX, ny = hit.placeY, nz = hit.placeZ;
             if (player.isCollidingAtGrid(nx, ny, nz)) return;
-            world.addBlock(nx, ny, nz, selectedType);
+            if (!world.addBlock(nx, ny, nz, selectedType)) ui.showToast("Limite de 20000 blocos atingido");
         }
     }
 
     // ---- salvar/carregar ----
+    // O dialogo Swing roda na EDT do Swing; aqui so anotamos o arquivo
+    // escolhido e o trabalho de verdade acontece na thread do jogo
+    // (processPendingIO), para nao mutar o mundo enquanto render/fisica
+    // iteram os blocos.
+    private volatile File pendingSaveFile, pendingLoadFile;
+
     private void doSave() {
         File savesDir = new File("saves");
         if (!savesDir.exists()) savesDir.mkdirs();
-        WorldIO.saveDialog(savesDir, (file, isSave) -> {
-            try {
-                world.saveWorld(file, dayNight.formatTime(), dayNight.worldTime, dayNight.dayCount,
-                        player.playerX, player.feetY, player.playerZ, player.yaw, player.pitch);
-                WorldIO.showInfo("Mundo salvo: " + file.getName() + " (" + world.blockCount() + " blocos)");
-            } catch (Exception ex) {
-                WorldIO.showError("Erro ao salvar: " + ex.getMessage());
-            }
-        });
+        WorldIO.saveDialog(savesDir, (file, isSave) -> pendingSaveFile = file);
     }
 
     private void doLoad() {
         File savesDir = new File("saves");
-        WorldIO.loadDialog(savesDir, (file, isSave) -> {
-            try {
-                World.SavedPlayerState st = world.loadWorld(file);
-                if (st != null) {
-                    dayNight.worldTime = st.worldTime; dayNight.dayCount = st.dayCount;
-                    player.playerX = st.playerX; player.feetY = st.feetY; player.playerZ = st.playerZ;
-                    player.yaw = st.yaw; player.pitch = st.pitch;
-                }
-                WorldIO.showInfo("Mundo carregado: " + file.getName() + " (" + world.blockCount() + " blocos)");
-            } catch (Exception ex) {
-                WorldIO.showError("Erro ao carregar: " + ex.getMessage());
+        WorldIO.loadDialog(savesDir, (file, isSave) -> pendingLoadFile = file);
+    }
+
+    private void processPendingIO() {
+        File f = pendingSaveFile;
+        if (f != null) { pendingSaveFile = null; performSave(f); }
+        f = pendingLoadFile;
+        if (f != null) { pendingLoadFile = null; performLoad(f); }
+    }
+
+    private void performSave(File file) {
+        try {
+            world.saveWorld(file, dayNight.formatTime(), dayNight.worldTime, dayNight.dayCount,
+                    player.playerX, player.feetY, player.playerZ, player.yaw, player.pitch);
+            WorldIO.showInfo("Mundo salvo: " + file.getName() + " (" + world.blockCount() + " blocos)");
+        } catch (Exception ex) {
+            WorldIO.showError("Erro ao salvar: " + ex.getMessage());
+        }
+    }
+
+    private void performLoad(File file) {
+        try {
+            World.SavedPlayerState st = world.loadWorld(file);
+            if (st != null) {
+                dayNight.worldTime = st.worldTime; dayNight.dayCount = st.dayCount;
+                player.playerX = st.playerX; player.feetY = st.feetY; player.playerZ = st.playerZ;
+                player.yaw = st.yaw; player.pitch = st.pitch;
             }
-        });
+            WorldIO.showInfo("Mundo carregado: " + file.getName() + " (" + world.blockCount() + " blocos)");
+        } catch (Exception ex) {
+            WorldIO.showError("Erro ao carregar: " + ex.getMessage());
+        }
     }
 
     private void cleanup() {
